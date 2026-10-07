@@ -2338,7 +2338,30 @@ class SafeDecisionAgent:
 
         model_result: dict[str, Any] = {}
         if model_questions:
-            model_result = self.inner.predict(state, model_questions)
+            try:
+                model_result = self.inner.predict(state, model_questions)
+            except Exception as exc:
+                inner_device = getattr(self.inner, "device", None)
+                if inner_device is not None and str(inner_device) != "cpu":
+                    import warnings
+                    warnings.warn(
+                        f"Laya model inference failed on {inner_device} ({exc}). Falling back to CPU.",
+                        RuntimeWarning,
+                    )
+                    try:
+                        import torch
+                        self.inner.device = torch.device("cpu")
+                        if hasattr(self.inner, "amp_enabled"):
+                            self.inner.amp_enabled = False
+                        if hasattr(self.inner, "dtype"):
+                            self.inner.dtype = torch.float32
+                        if hasattr(self.inner, "model") and hasattr(self.inner.model, "to"):
+                            self.inner.model.to("cpu")
+                        model_result = self.inner.predict(state, model_questions)
+                    except Exception as retry_exc:
+                        raise retry_exc from exc
+                else:
+                    raise
             answers.update(model_result.get("answers") or {})
         usage = dict(model_result.get("usage") or {})
         usage.setdefault("input_tokens", 0)
@@ -2405,7 +2428,16 @@ def load_agent(model: str, device: str) -> Any:
         selected = device
     model_source = resolve_model_source(model)
     print(f"Loading Laya model {model!r} on {selected or 'auto'}...", flush=True)
-    return SafeDecisionAgent(laya.load(model_source, device=selected))
+    try:
+        raw_agent = laya.load(model_source, device=selected)
+    except Exception as exc:
+        if selected is not None and str(selected) != "cpu":
+            import warnings
+            warnings.warn(f"Failed to load Laya model on {selected} ({exc}); falling back to CPU.", RuntimeWarning)
+            raw_agent = laya.load(model_source, device="cpu")
+        else:
+            raise
+    return SafeDecisionAgent(raw_agent)
 
 
 

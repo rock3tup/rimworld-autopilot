@@ -23,7 +23,7 @@ class EndingReadBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="laya-ending-read-boundary-") as temp:
             root=Path(temp)
             (root/"Boundary.csproj").write_text(f'''<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup><ItemGroup><Compile Include="{helper.as_posix()}" Link="EndingReadBoundary.cs" /></ItemGroup></Project>''',encoding="utf-8")
-            (root/"NuGet.Config").write_text('<configuration><packageSources><clear /></packageSources></configuration>',encoding="utf-8")
+            (root/"NuGet.Config").write_text('<configuration><packageSources><add key="nuget.org" value="https://api.nuget.org/v3/index.json" /></packageSources></configuration>',encoding="utf-8")
             (root/"Program.cs").write_text(r'''
 using RIMAPI.Helpers;
 using System.Text.Json;
