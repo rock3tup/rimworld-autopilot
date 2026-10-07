@@ -6,9 +6,16 @@ cd "$SCRIPT_DIR"
 
 echo "Installing RimWorld Autopilot dependencies and setting up environment..."
 
-PYTHON_BIN="python3"
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "Error: python3 is required. Please install Python 3.10-3.12."
+PYTHON_BIN=""
+for candidate in python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        PYTHON_BIN="$candidate"
+        break
+    fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo "Error: Python 3 is required. Please install Python 3.10-3.12."
     exit 1
 fi
 
