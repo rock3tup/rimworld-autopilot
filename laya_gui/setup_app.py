@@ -247,31 +247,50 @@ class SetupWindow(tk.Tk):
         candidates = []
         if not getattr(sys, "frozen", False):
             candidates.append(Path(sys.executable))
-        for name in ("py", "python"):
-            executable = shutil.which(name)
+
+        extra_paths = []
+        if sys.platform == "darwin":
+            extra_paths = [
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/Library/Frameworks/Python.framework/Versions/Current/bin",
+                f"{Path.home()}/.local/bin",
+            ]
+        env_path = os.environ.get("PATH", "")
+        search_path = os.pathsep.join([env_path] + [p for p in extra_paths if Path(p).exists()])
+
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        names = ("python3.12", "python3.11", "python3.10", "python3.13", "python3.14", "python3", "python", "py")
+        for name in names:
+            executable = shutil.which(name, path=search_path)
             if not executable:
                 continue
             command = [executable, "-3.12", "-c", "import sys;print(sys.executable)"] if name == "py" else [executable, "-c", "import sys;print(sys.executable)"]
             try:
-                candidates.append(Path(subprocess.check_output(command, text=True, creationflags=subprocess.CREATE_NO_WINDOW).strip()))
+                found = Path(subprocess.check_output(command, text=True, creationflags=flags).strip())
+                if found not in candidates:
+                    candidates.append(found)
             except (OSError, subprocess.SubprocessError):
                 pass
+
         for candidate in candidates:
             try:
-                version = subprocess.check_output([str(candidate), "-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"], text=True, creationflags=subprocess.CREATE_NO_WINDOW).strip()
+                version = subprocess.check_output([str(candidate), "-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"], text=True, creationflags=flags).strip()
                 major, minor = map(int, version.split("."))
                 if major == 3 and 10 <= minor <= 12:
                     return candidate
             except (OSError, ValueError, subprocess.SubprocessError):
                 continue
-        return None
+
+        return candidates[0] if candidates else None
 
     def _emit(self, kind: str, value: str) -> None:
         self.events.put((kind, value))
 
     @staticmethod
     def _run(args: list[str], cwd: Path) -> None:
-        subprocess.run(args, cwd=cwd, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        subprocess.run(args, cwd=cwd, check=True, creationflags=flags)
 
     @staticmethod
     def _copy_payload(source: Path, destination: Path) -> None:
@@ -279,17 +298,26 @@ class SetupWindow(tk.Tk):
 
     @staticmethod
     def _create_shortcut(install_dir: Path, venv_python: Path) -> None:
-        executable = install_dir / "RimWorld-Autopilot.exe"
-        arguments = ""
-        if not executable.exists():
-            executable = venv_python.with_name("pythonw.exe")
-            arguments = f'"{install_dir / "autopilot_control.py"}"'
-        desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
-        shortcut = desktop / "RimWorld Autopilot.lnk"
-        env = os.environ.copy()
-        env.update({"RWA_LINK": str(shortcut), "RWA_TARGET": str(executable), "RWA_ARGS": arguments, "RWA_WORK": str(install_dir), "RWA_ICON": str(install_dir / "RimWorld-Autopilot.exe")})
-        script = "$w=New-Object -ComObject WScript.Shell;$s=$w.CreateShortcut($env:RWA_LINK);$s.TargetPath=$env:RWA_TARGET;$s.Arguments=$env:RWA_ARGS;$s.WorkingDirectory=$env:RWA_WORK;if(Test-Path -LiteralPath $env:RWA_ICON){$s.IconLocation=$env:RWA_ICON};$s.Save()"
-        subprocess.run(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script], check=True, env=env, creationflags=subprocess.CREATE_NO_WINDOW)
+        if os.name == "nt":
+            executable = install_dir / "RimWorld-Autopilot.exe"
+            arguments = ""
+            if not executable.exists():
+                executable = venv_python.with_name("pythonw.exe")
+                arguments = f'"{install_dir / "autopilot_control.py"}"'
+            desktop = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
+            shortcut = desktop / "RimWorld Autopilot.lnk"
+            env = os.environ.copy()
+            env.update({"RWA_LINK": str(shortcut), "RWA_TARGET": str(executable), "RWA_ARGS": arguments, "RWA_WORK": str(install_dir), "RWA_ICON": str(install_dir / "RimWorld-Autopilot.exe")})
+            script = "$w=New-Object -ComObject WScript.Shell;$s=$w.CreateShortcut($env:RWA_LINK);$s.TargetPath=$env:RWA_TARGET;$s.Arguments=$env:RWA_ARGS;$s.WorkingDirectory=$env:RWA_WORK;if(Test-Path -LiteralPath $env:RWA_ICON){$s.IconLocation=$env:RWA_ICON};$s.Save()"
+            subprocess.run(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script], check=True, env=env, creationflags=subprocess.CREATE_NO_WINDOW)
+        elif sys.platform == "darwin":
+            desktop = Path.home() / "Desktop"
+            launcher = desktop / "Start RimWorld Autopilot.command"
+            launcher.write_text(
+                f"#!/bin/bash\ncd \"{install_dir}\"\n\"{venv_python}\" autopilot_control.py\n",
+                encoding="utf-8"
+            )
+            os.chmod(launcher, 0o755)
 
     def _install(self, python: Path, rimworld: Path, install_dir: Path, device: str, shortcut: bool) -> None:
         try:
