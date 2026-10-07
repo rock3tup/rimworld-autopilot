@@ -11497,7 +11497,7 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Long-horizon Laya colony director for RimWorld")
     p.add_argument("--api-url", default=bridge.DEFAULT_API_URL)
     p.add_argument("--model", default=bridge.DEFAULT_MODEL)
-    p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cuda")
+    p.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="cuda" if os.name == "nt" else ("mps" if sys.platform == "darwin" else "cpu"))
     p.add_argument("--interval", type=float, default=10.0)
     p.add_argument("--state", type=Path, default=Path(__file__).with_name("logs") / "colony-state.json")
     p.add_argument("--log", type=Path, default=Path(__file__).with_name("logs") / "decisions.jsonl")
@@ -12793,9 +12793,20 @@ def main() -> int:
             pass
     args = parser().parse_args()
     singleton_handle = None
+    singleton_lock_file = None
     if os.name == "nt":
         singleton_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\RimWorldLayaColonyDirector")
         if ctypes.windll.kernel32.GetLastError() == 183:
+            print("Another Laya colony director is already active; exiting duplicate process.", flush=True)
+            return 2
+    else:
+        try:
+            import fcntl
+            tmp_dir = os.environ.get("TMPDIR", "/tmp") if hasattr(os, "environ") else "/tmp"
+            lock_path = Path(tmp_dir) / "rimworld_laya_director.lock"
+            singleton_lock_file = open(lock_path, "w")
+            fcntl.flock(singleton_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (ImportError, OSError, AttributeError):
             print("Another Laya colony director is already active; exiting duplicate process.", flush=True)
             return 2
     args.pid_file.parent.mkdir(parents=True, exist_ok=True)
@@ -13296,6 +13307,13 @@ def main() -> int:
             pass
         if singleton_handle:
             ctypes.windll.kernel32.CloseHandle(singleton_handle)
+        if singleton_lock_file:
+            try:
+                import fcntl
+                fcntl.flock(singleton_lock_file.fileno(), fcntl.LOCK_UN)
+                singleton_lock_file.close()
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

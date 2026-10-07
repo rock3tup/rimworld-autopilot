@@ -2399,7 +2399,10 @@ def load_agent(model: str, device: str) -> Any:
             pass  # PyTorch allows this setting only before the first inference.
     import laya
 
-    selected = None if device == "auto" else device
+    if device == "auto":
+        selected = None
+    else:
+        selected = device
     model_source = resolve_model_source(model)
     print(f"Loading Laya model {model!r} on {selected or 'auto'}...", flush=True)
     return SafeDecisionAgent(laya.load(model_source, device=selected))
@@ -2582,7 +2585,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", choices=["check", "suggest", "run-once", "watch", "download-model"])
     parser.add_argument("--api-url", default=os.environ.get("RIMAPI_URL", DEFAULT_API_URL))
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
     parser.add_argument("--confidence", type=float, default=0.0)
     parser.add_argument("--interval", type=int, default=45)
     parser.add_argument("--apply", action="store_true", help="Actually send whitelisted commands to RIMAPI")

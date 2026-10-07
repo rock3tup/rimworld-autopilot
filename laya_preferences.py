@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -47,9 +48,14 @@ def preferences_path(base_dir: Path | None = None) -> Path:
     if configured:
         return Path(configured)
     source_dir = Path(__file__).resolve().parent
-    program_roots = [Path(value).resolve() for key in ("ProgramFiles", "ProgramFiles(x86)") if (value := os.environ.get(key))]
-    if any(source_dir == root or root in source_dir.parents for root in program_roots):
-        return Path(os.environ.get("LOCALAPPDATA", str(source_dir))) / "RimWorld Autopilot" / "autopilot-preferences.json"
+    if os.name == "nt":
+        program_roots = [Path(value).resolve() for key in ("ProgramFiles", "ProgramFiles(x86)") if (value := os.environ.get(key))]
+        if any(source_dir == root or root in source_dir.parents for root in program_roots):
+            return Path(os.environ.get("LOCALAPPDATA", str(source_dir))) / "RimWorld Autopilot" / "autopilot-preferences.json"
+    elif sys.platform == "darwin":
+        app_support = Path.home() / "Library" / "Application Support" / "RimWorld Autopilot"
+        if any(token in str(source_dir) for token in ("/Applications", "/Library")):
+            return app_support / "autopilot-preferences.json"
     return source_dir / "autopilot-preferences.json"
 
 

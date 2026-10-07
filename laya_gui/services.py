@@ -21,9 +21,23 @@ from app_version import APP_VERSION
 APP_NAME = f"RimWorld Autopilot {APP_VERSION}"
 BASE_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
-# Resolve data-directory junctions before passing paths to a Store Python child.
-# Its AppData view can otherwise differ from the native GUI's view.
-DATA_DIR = ((Path(os.environ.get("LOCALAPPDATA", str(BASE_DIR))) / "RimWorld Autopilot") if getattr(sys, "frozen", False) else BASE_DIR).resolve()
+
+
+def default_user_data_dir() -> Path:
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", str(BASE_DIR))) / "RimWorld Autopilot"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "RimWorld Autopilot"
+    return Path.home() / ".config" / "RimWorld Autopilot"
+
+
+def default_venv_python(base: Path) -> Path:
+    if os.name == "nt":
+        return base / ".venv" / "Scripts" / "python.exe"
+    return base / ".venv" / "bin" / "python"
+
+
+DATA_DIR = (default_user_data_dir() if getattr(sys, "frozen", False) else BASE_DIR).resolve()
 CONFIG_PATH = DATA_DIR / "rimworld-autopilot.json"
 PACKAGED_CONFIG_PATH = BASE_DIR / "rimworld-autopilot.json"
 LEGACY_CONFIG_PATH = BASE_DIR / "laya-control.json"
@@ -33,10 +47,10 @@ OBSERVER_STATUS_PATH = DATA_DIR / "logs" / "observer-status.json"
 OBSERVER_PID_PATH = DATA_DIR / "logs" / "observer.pid"
 OBSERVER_LOG_PATH = DATA_DIR / "logs" / "observer.jsonl"
 DEFAULT_CONFIG = {
-    "python_exe": str(BASE_DIR / ".venv" / "Scripts" / "python.exe"),
+    "python_exe": str(default_venv_python(BASE_DIR)),
     "director_script": str(BASE_DIR / "colony_director.py"),
     "api_url": "http://localhost:8765",
-    "device": "cuda",
+    "device": "mps" if sys.platform == "darwin" else "cuda",
     "interval": 10,
 }
 
