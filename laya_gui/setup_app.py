@@ -51,10 +51,10 @@ def _default_rimworld() -> Path:
 
 
 def _source_root() -> Path:
-    for candidate in (BASE_DIR, BASE_DIR.parent):
+    for candidate in (RESOURCE_DIR, BASE_DIR, BASE_DIR.parent, BASE_DIR.parent / "Resources"):
         if (candidate / "requirements.txt").exists() and (candidate / "vendor" / "RIMAPI").exists():
             return candidate
-    return BASE_DIR
+    return RESOURCE_DIR if getattr(sys, "frozen", False) else BASE_DIR
 
 
 def _argument_path(name: str, fallback: Path) -> Path:

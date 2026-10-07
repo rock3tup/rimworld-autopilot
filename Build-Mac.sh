@@ -51,6 +51,10 @@ PYINSTALLER_ARGS=(
     "--distpath" "$DIST_DIR"
     "--add-data" "$ASSET_ROOT:assets/gui"
     "--add-data" "VERSION:."
+    "--add-data" "requirements.txt:."
+    "--add-data" "LICENSE:."
+    "--add-data" "THIRD_PARTY_NOTICES.md:."
+    "--add-data" "vendor/RIMAPI:vendor/RIMAPI"
     "--name" "RimWorld-Autopilot"
 )
 
@@ -67,6 +71,10 @@ SETUP_ARGS=(
     "--distpath" "$DIST_DIR"
     "--add-data" "$ASSET_ROOT:assets/gui"
     "--add-data" "VERSION:."
+    "--add-data" "requirements.txt:."
+    "--add-data" "LICENSE:."
+    "--add-data" "THIRD_PARTY_NOTICES.md:."
+    "--add-data" "vendor/RIMAPI:vendor/RIMAPI"
     "--name" "RimWorld-Autopilot-Setup"
 )
 if [ -f "$ICON_ICNS" ]; then
