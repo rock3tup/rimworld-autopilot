@@ -252,10 +252,17 @@ def _target_failed(map_state, context, selected):
     delay = min(5, max(1, int(prior.get("delay") or 0) * 2)) if prior.get("signature") == signature else 1
     map_state["native_target_retry"] = {"signature": signature, "selected": selected, "delay": delay, "until": time.time() + delay}
 
+def _safe_get(client: Any, endpoint: str) -> Any:
+    try:
+        return client.get(endpoint)
+    except Exception:
+        return None
+
+
 def run_pending(client: Any, agent: Any, snapshot: dict, map_state: dict, *, world_only=False) -> dict | None:
-    windows = client.get("/api/v1/ui/windows") or []
-    top = next((w for w in reversed(windows) if w.get("force_pause") or w.get("blocks_input")), None)
-    targeting = client.get("/api/v1/affordances/targeting") if top is None and not world_only else {}
+    windows = _safe_get(client, "/api/v1/ui/windows") or []
+    top = next((w for w in reversed(windows) if isinstance(w, dict) and (w.get("force_pause") or w.get("blocks_input"))), None)
+    targeting = _safe_get(client, "/api/v1/affordances/targeting") if top is None and not world_only else {}
     if isinstance(targeting, dict) and targeting.get("active"):
         native_memory = transition_memory(map_state, 'native_transition_memory', snapshot)
         transition_key = 'target:' + str(targeting.get('session_id'))
@@ -271,7 +278,7 @@ def run_pending(client: Any, agent: Any, snapshot: dict, map_state: dict, *, wor
                     "result": {"applied": False, "reason": "target_retry_cooling", "completion": "unverified"}}
         selected, raw = target_choice(agent, targeting, map_state.get("native_intent"))
         if not selected["cancel"]:
-            fresh = client.get("/api/v1/affordances/targeting") or {}
+            fresh = _safe_get(client, "/api/v1/affordances/targeting") or {}
             if not fresh.get("active") or targeting_changed(targeting_evidence(targeting, selected), targeting_evidence(fresh, selected)):
                 transition_record(native_memory, transition_key, readiness, {'applied': False, 'reason': 'stale_readback'})
                 _target_failed(map_state, fresh if fresh.get("active") else targeting, selected)

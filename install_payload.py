@@ -69,6 +69,8 @@ def copy_install_payload(source: Path, destination: Path) -> None:
     for name in RUNTIME_FILES:
         candidate = source / name
         if name == "RimWorld-Autopilot.exe" and not candidate.is_file():
+            if (source / "autopilot_control.py").is_file():
+                continue
             candidate = source / "dist" / name
         if not candidate.is_file():
             raise FileNotFoundError(candidate)
@@ -84,6 +86,8 @@ def copy_install_payload(source: Path, destination: Path) -> None:
     for name in RUNTIME_FILES:
         candidate = source / name
         if name == "RimWorld-Autopilot.exe" and not candidate.is_file():
+            if (source / "autopilot_control.py").is_file():
+                continue
             candidate = source / "dist" / name
         shutil.copy2(candidate, destination / name)
     destination_mod = destination / "vendor" / "RIMAPI"
