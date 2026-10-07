@@ -21,7 +21,7 @@ import laya_preferences
 from .i18n import PRIORITY_TEXT, QUESTION_TEXT, doctrine_view, humanize, risk_text, tr
 from .services import (
     APP_NAME, BASE_DIR, FEEDBACK_PATH, PREFERENCES_PATH, RESOURCE_DIR,
-    active_map_key, append_feedback, export_bundle, export_history, load_config, read_director_health, read_pid, request_json, resolve_log_dir,
+    active_map_key, append_feedback, export_bundle, export_history, load_config, save_config, read_director_health, read_pid, request_json, resolve_log_dir,
     start_director, start_observer as launch_observer, stop_director, tail_jsonl,
     timestamped_export_name,
 )
@@ -373,6 +373,24 @@ class ControlCenter(tk.Tk):
         ttk.Checkbutton(logging.body, text=tr(self.language, "technical_logging"), variable=self.tech_var, command=self.toggle_technical).pack(anchor="w")
         tk.Label(logging.body, text=tr(self.language, "technical_help"), bg=COLORS["panel"], fg=COLORS["muted"], font=FONTS["small"], justify="left", wraplength=440).pack(anchor="w", pady=(8, 0))
 
+        env_card = ShadowCard(page)
+        env_card.pack(fill="x", pady=(14, 0))
+        tk.Label(env_card.body, text=tr(self.language, "env_paths_title"), bg=COLORS["panel"], fg=COLORS["cyan"], font=FONTS["heading"]).pack(anchor="w")
+        tk.Label(env_card.body, text=tr(self.language, "env_paths_help"), bg=COLORS["panel"], fg=COLORS["muted"], font=FONTS["small"], justify="left", wraplength=940).pack(anchor="w", pady=(4, 10))
+
+        self.rimworld_path_var = tk.StringVar(value=str(self.config_data.get("rimworld_path") or ""))
+        self.python_exe_var = tk.StringVar(value=str(self.config_data.get("python_exe") or ""))
+        self.director_script_var = tk.StringVar(value=str(self.config_data.get("director_script") or ""))
+
+        self._path_field(env_card.body, "rimworld_path_label", self.rimworld_path_var, self._browse_rimworld_path)
+        self._path_field(env_card.body, "python_exe_label", self.python_exe_var, self._browse_python_exe)
+        self._path_field(env_card.body, "director_script_label", self.director_script_var, self._browse_director_script)
+
+        btn_row = tk.Frame(env_card.body, bg=COLORS["panel"])
+        btn_row.pack(fill="x", pady=(10, 0))
+        FancyButton(btn_row, text=tr(self.language, "save_paths_btn"), width=160, variant="soft", command=self.save_config_paths).pack(side="left", padx=(0, 10))
+        FancyButton(btn_row, text=tr(self.language, "create_venv_btn"), width=240, variant="accent", command=self.create_environment_async).pack(side="left")
+
         overlay = ShadowCard(page)
         overlay.pack(fill="x", pady=(14, 0))
         tk.Label(overlay.body, text=tr(self.language, "overlay_title"), bg=COLORS["panel"], fg=COLORS["amber"], font=FONTS["heading"]).pack(anchor="w")
@@ -562,6 +580,88 @@ class ControlCenter(tk.Tk):
             self.footer.configure(text=f"{tr(self.language, 'done')}: {target}", fg=COLORS["green"])
         except OSError as exc:
             messagebox.showerror(APP_NAME, str(exc))
+
+    def _path_field(self, parent: tk.Misc, label_key: str, variable: tk.StringVar, command) -> None:
+        tk.Label(parent, text=tr(self.language, label_key), bg=COLORS["panel"], fg=COLORS["text"], font=FONTS["small"]).pack(anchor="w", pady=(4, 2))
+        row = tk.Frame(parent, bg=COLORS["panel"])
+        row.pack(fill="x", pady=(0, 6))
+        tk.Entry(row, textvariable=variable, bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["cyan"], relief="flat", font=FONTS["body"]).pack(side="left", fill="x", expand=True, ipady=4)
+        FancyButton(row, text="...", width=48, height=28, variant="soft", command=command).pack(side="right", padx=(6, 0))
+
+    def _browse_rimworld_path(self) -> None:
+        selected = filedialog.askdirectory(initialdir=self.rimworld_path_var.get() or str(Path.home()))
+        if selected:
+            self.rimworld_path_var.set(selected)
+
+    def _browse_python_exe(self) -> None:
+        selected = filedialog.askopenfilename(initialdir=str(Path(self.python_exe_var.get()).parent if self.python_exe_var.get() else Path.home()))
+        if selected:
+            self.python_exe_var.set(selected)
+
+    def _browse_director_script(self) -> None:
+        selected = filedialog.askopenfilename(initialdir=str(Path(self.director_script_var.get()).parent if self.director_script_var.get() else Path.home()))
+        if selected:
+            self.director_script_var.set(selected)
+
+    def save_config_paths(self) -> None:
+        self.config_data["rimworld_path"] = self.rimworld_path_var.get().strip()
+        self.config_data["python_exe"] = self.python_exe_var.get().strip()
+        self.config_data["director_script"] = self.director_script_var.get().strip()
+        save_config(self.config_data)
+        self._configure_run_paths()
+        self.footer.configure(text=tr(self.language, "saved"), fg=COLORS["green"])
+
+    def create_environment_async(self) -> None:
+        self.save_config_paths()
+        self.footer.configure(text=tr(self.language, "env_building"), fg=COLORS["amber"])
+        threading.Thread(target=self._build_environment_task, daemon=True).start()
+
+    def _build_environment_task(self) -> None:
+        try:
+            root_dir = RESOURCE_DIR if getattr(sys, "frozen", False) else BASE_DIR
+            target_dir = Path(self.config_data.get("director_script") or root_dir / "colony_director.py").parent
+            venv_dir = target_dir / ".venv"
+            if getattr(sys, "frozen", False) and not os.access(target_dir, os.W_OK):
+                from .services import DATA_DIR
+                venv_dir = DATA_DIR / ".venv"
+
+            extra_paths = ["/opt/homebrew/bin", "/usr/local/bin", "/Library/Frameworks/Python.framework/Versions/Current/bin"] if sys.platform == "darwin" else []
+            search_path = os.pathsep.join([os.environ.get("PATH", "")] + [p for p in extra_paths if Path(p).exists()])
+            python_bin = sys.executable if not getattr(sys, "frozen", False) else (
+                shutil.which("python3.12", path=search_path) or
+                shutil.which("python3.11", path=search_path) or
+                shutil.which("python3.10", path=search_path) or
+                shutil.which("python3", path=search_path) or "python3"
+            )
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
+            if not venv_dir.exists():
+                subprocess.run([python_bin, "-m", "venv", str(venv_dir)], cwd=target_dir, check=True, creationflags=flags)
+
+            venv_python = venv_dir / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+            subprocess.run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], cwd=target_dir, check=True, creationflags=flags)
+
+            req_file = root_dir / "requirements.txt" if (root_dir / "requirements.txt").exists() else target_dir / "requirements.txt"
+            if req_file.exists():
+                subprocess.run([str(venv_python), "-m", "pip", "install", "-r", str(req_file)], cwd=target_dir, check=True, creationflags=flags)
+
+            laya_script = root_dir / "rimworld_laya.py" if (root_dir / "rimworld_laya.py").exists() else target_dir / "rimworld_laya.py"
+            if laya_script.exists():
+                subprocess.run([str(venv_python), str(laya_script), "download-model"], cwd=target_dir, check=True, creationflags=flags)
+
+            director_script = root_dir / "colony_director.py" if (root_dir / "colony_director.py").exists() else target_dir / "colony_director.py"
+            self.config_data["python_exe"] = str(venv_python)
+            if director_script.exists():
+                self.config_data["director_script"] = str(director_script)
+            save_config(self.config_data)
+            self._configure_run_paths()
+
+            self.after(0, lambda: self.python_exe_var.set(str(venv_python)))
+            if director_script.exists():
+                self.after(0, lambda: self.director_script_var.set(str(director_script)))
+            self.after(0, lambda: self.footer.configure(text=tr(self.language, "env_built_success"), fg=COLORS["green"]))
+        except Exception as exc:
+            self.after(0, lambda: messagebox.showerror(APP_NAME, f"{tr(self.language, 'error')}: {exc}"))
 
     def open_uninstaller(self) -> None:
         executable = BASE_DIR / "unins000.exe"

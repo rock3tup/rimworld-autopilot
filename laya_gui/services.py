@@ -88,10 +88,22 @@ def load_config() -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         pass
     for key in ("python_exe", "director_script"):
-        value = Path(str(config[key]))
-        if not value.is_absolute():
-            config[key] = str((BASE_DIR / value).resolve())
+        if key in config and config[key]:
+            value = Path(str(config[key]))
+            if not value.is_absolute():
+                config[key] = str((BASE_DIR / value).resolve())
     return config
+
+
+def save_config(config: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    serialized = json.dumps(config, ensure_ascii=False, indent=2)
+    CONFIG_PATH.write_text(serialized, encoding="utf-8")
+    if PACKAGED_CONFIG_PATH != CONFIG_PATH:
+        try:
+            PACKAGED_CONFIG_PATH.write_text(serialized, encoding="utf-8")
+        except OSError:
+            pass
 
 
 def process_running(pid: int) -> bool:
